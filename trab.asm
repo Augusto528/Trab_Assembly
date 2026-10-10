@@ -560,97 +560,106 @@ segment code
 
     ret
 
-abrir_arquivo:
-        mov     di, 0
-        push    ax
-        push    bx
-        push    cx
-        push    dx
-        push    si
-        push    di
+    abrir_arquivo:
+            push    ax
+            push    bx
+            push    cx
+            push    dx
+            push    si
+            push    di
 
-        mov     ah, 3dh
-        mov     al, 0
-        mov     dx, arquivo_gatas
-        int     21h
-        jc      .erro                   ; Se acontecer algum erro, desvia para .erro
+            mov     ah, 3dh
+            mov     al, 0
+            mov     dx, arquivo_gatas
+            int     21h
+            jc      .erro                   ; Se acontecer algum erro, desvia para .erro
 
-        mov     [file_handle], ax       ; Salva o handle retornado pelo DOS
-        mov     si, [y_inicial]         ; SI controlará a linha Y atual
+            mov     [file_handle], ax       ; Salva o handle retornado pelo DOS
+            mov     si, [y_inicial]         ; SI controlará a linha Y gráfica na tela
 
-    .loop_linhas_arq:
-        mov     ah, 3fh
-        mov     bx, [file_handle]
-        mov     cx, 480                 ; 480 bytes por linha
-        mov     dx, buffer_linha
-        int     21h
+            ; Inicializa o controle da linha da imagem (0 a 239)
+            mov     word [linha], 0
 
-        cmp     ax, 0                   ; Se AX = 0, chegou ao Fim do Arquivo (EOF)
-        je      .fechar_arq
+        .loop_linhas_arq:
+            ; 1. Calcula o offset inicial no buffer_padded para a linha atual 'y'
+            ; Offset = (y + 1) * 242 + 1
+            mov     ax, [linha]
+            inc     ax                      ; AX = y + 1
+            mov     cx, 242
+            mul     cx                      ; AX = (y + 1) * 242
+            inc     ax                      ; AX = (y + 1) * 242 + 1 (Pula a borda esquerda)
+            mov     di, ax                  ; DI aponta para o inicio util da linha no buffer_padded
 
-        mov     cx, [x_inicial]         ; CX começa na coluna X inicial
-        mov     bx, buffer_linha        ; Aponta para o buffer da linha
+            ; 2. Lê uma linha do arquivo de texto
+            mov     ah, 3fh
+            mov     bx, [file_handle]
+            mov     cx, 480                 ; 480 bytes por linha do arquivo
+            mov     dx, buffer_linha
+            int     21h
 
-    .loop_colunas_arq:
-        mov     al, [bx]                ; Pega o caractere em bx
+            cmp     ax, 0                   ; Se AX = 0, chegou ao Fim do Arquivo (EOF)
+            je      .fechar_arq
 
-        cmp     al, 32                  ; Vê se é espaço ou caractere de controle (ASCII <= 32)
-        jbe     .avancar_ponteiro
+            mov     cx, [x_inicial]         ; CX começa na coluna X inicial da tela
+            mov     bx, buffer_linha        ; Aponta para o buffer lido do arquivo
 
-        ; Conversão ASCII para cor (0 a 15)
-        cmp     al, '9'
-        jbe     .numero
-        sub     al, 55                  ; Se for letra ('A'-'F'), converte para 10-15
-        jmp     .pintar
+        .loop_colunas_arq:
+            mov     al, [bx]                ; Pega o caractere em bx
 
-    .numero:
-        sub     al, 48                  ; Se for número ('0'-'9'), converte para 0-9
+            cmp     al, 32                  ; Vê se é espaço ou caractere de controle (ASCII <= 32)
+            jbe     .avancar_ponteiro
 
-    .pintar:
-        mov     [buffer + di], al       ; Salva o valor da cor no buffer linear
-        inc     di                      ; Avança o índice do buffer
+            ; Conversão ASCII para cor (0 a 15)
+            cmp     al, '9'
+            jbe     .numero
+            sub     al, 55                  ; Se for letra ('A'-'F'), converte para 10-15
+            jmp     .pintar
 
-        mov     byte [cor], al
-        push    cx
-        push    si                      ; Passa X (CX) e Y (SI) na pilha
-        call    plot_xy                 ; O plot_xy já limpa a pilha sozinho via 'ret 4'
+        .numero:
+            sub     al, 48                  ; Se for número ('0'-'9'), converte para 0-9
 
-    .avancar_ponteiro:
-        add     bx, 2                   ; Avança 2 bytes no buffer (pixel + espaço)
-        inc     cx                      ; Avança o pixel X na tela
-        
-        mov     ax, [x_inicial]
-        add     ax, 240                 ; Largura da imagem
-        cmp     cx, ax                  
-        jb      .loop_colunas_arq
+        .pintar:
+            mov     [buffer_padded + di], al ; Salva o valor da cor no buffer estendido
+            inc     di                       ; Avança o índice do buffer estendido
 
-        inc     si                      ; Próxima linha Y
-        
-        mov     ax, [y_inicial]
-        add     ax, 240                 
-        cmp     si, ax 
-        jb      .loop_linhas_arq
+            mov     byte [cor], al
+            push    cx
+            push    si                      ; Passa X (CX) e Y (SI) na pilha
+            call    plot_xy                 ; Desenha o pixel na tela
 
-    .fechar_arq:
-        mov     ah, 3eh
-        mov     bx, [file_handle]
-        int     21h
-        clc                             ; Limpa carry flag (sucesso)
-        jmp     .fim_abertura           
+        .avancar_ponteiro:
+            add     bx, 2                   ; Avança 2 bytes no buffer do arquivo (pixel + espaço)
+            inc     cx                      ; Avança o pixel X na tela
+            
+            mov     ax, [x_inicial]
+            add     ax, 240                 ; Largura da imagem
+            cmp     cx, ax                  
+            jb      .loop_colunas_arq
 
-    .erro:
-        stc                             ; Ativa carry flag (erro)
+            inc     si                      ; Próxima linha Y gráfica da tela
+            inc     word [linha]            ; Avança o contador de linha da imagem (0 a 239)
+            
+            cmp     word [linha], 240                 
+            jb      .loop_linhas_arq
 
-    .fim_abertura:
-        pop     di
-        pop     si
-        pop     dx
-        pop     cx
-        pop     bx
-        pop     ax
-        ret
+        .fechar_arq:
+            mov     ah, 3eh
+            mov     bx, [file_handle]
+            int     21h
+            clc                             ; Limpa carry flag (sucesso)
+            jmp     .fim_abertura           
 
-;
+        .erro:
+            stc                             ; Ativa carry flag (erro)
+
+        .fim_abertura:
+            pop     di
+            pop     si
+            pop     dx
+            pop     cx
+            pop     bx
+            pop     ax
+            ret
 
 
  
@@ -1275,9 +1284,10 @@ segment data
     arquivo_alter   db      'alter.txt', 0
     handler         dw      0
 
-    buffer          times 57600 db 0
+    buffer_padded          times 58564 db 0
 ;
 
 segment stack stack
     resb 512
 stacktop:
+
