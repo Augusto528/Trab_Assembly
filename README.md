@@ -1,7 +1,3 @@
-# README — Trab_Assembly
-
-> **Destino:** copie o conteúdo da seção **README** para o arquivo `README.md` na raiz de `Augusto528/Trab_Assembly`.
-
 # 8086 Assembly — Image Convolution and Matrix Filtering
 
 Academic project developed in x86 Assembly for an 8086-compatible environment. The main assignment explores matrix-based image processing, including convolution and boundary handling through padded data.
